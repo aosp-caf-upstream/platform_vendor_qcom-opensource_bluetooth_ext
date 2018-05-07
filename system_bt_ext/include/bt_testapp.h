@@ -53,6 +53,7 @@
 #include "mca_api.h"
 #include <hardware/hardware.h>
 #include "btm_api.h"
+#include "bt_types.h"
 
 __BEGIN_DECLS
 
@@ -208,6 +209,7 @@ typedef struct
     void (*Gap_AttrInit)();
     void (*Gap_BleAttrDBUpdate)(RawAddress bd_addr, uint16_t int_min, uint16_t int_max, uint16_t latency, uint16_t sp_tout);
 }btgap_interface_t;
+
 
 /** Bluetooth RFC tool commands */
 typedef enum {

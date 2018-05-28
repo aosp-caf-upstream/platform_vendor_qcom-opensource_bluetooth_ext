@@ -1791,7 +1791,8 @@ public final class Avrcp_ext {
                         }
 
                         if (!device.equals(deviceFeatures[i].mCurrentDevice) &&
-                            deviceFeatures[i].isActiveDevice && isPlaying) {
+                            deviceFeatures[i].isActiveDevice && isPlaying &&
+                            !isTwsPlusPair(deviceFeatures[i].mCurrentDevice, device)) {
                             deviceFeatures[i].isActiveDevice = false;
                             Log.v(TAG,"updateCurrentMediaState: Active device is set false at index = " + i);
                         }
@@ -1837,19 +1838,6 @@ public final class Avrcp_ext {
                             + currentAttributes.toRedactedString() + " : "
                             + mMediaAttributes.toRedactedString());
 
-
-            if (mAvailablePlayerViewChanged && addr != null &&
-                    index != INVALID_DEVICE_INDEX &&
-                    (deviceFeatures[index].mAvailablePlayersChangedNT ==
-                        AvrcpConstants.NOTIFICATION_TYPE_INTERIM)) {
-                Log.v(TAG, "Sending response for available playerchanged:");
-                deviceFeatures[index].mAvailablePlayersChangedNT =
-                                   AvrcpConstants.NOTIFICATION_TYPE_CHANGED;
-                registerNotificationRspAvalPlayerChangedNative(
-                        AvrcpConstants.NOTIFICATION_TYPE_CHANGED, addr);
-                mAvailablePlayerViewChanged = false;
-                return;
-            }
             if (addr != null && mReportedPlayerID != mCurrAddrPlayerID &&
                     index != INVALID_DEVICE_INDEX) {
                 if (deviceFeatures[index].mAvailablePlayersChangedNT ==
@@ -2095,6 +2083,17 @@ public final class Avrcp_ext {
                 registerNotificationRspAvalPlayerChangedNative(
                         AvrcpConstants.NOTIFICATION_TYPE_INTERIM,
                         getByteAddress(deviceFeatures[deviceIndex].mCurrentDevice));
+                if (mAvailablePlayerViewChanged &&
+                        (deviceFeatures[deviceIndex].mAvailablePlayersChangedNT ==
+                        AvrcpConstants.NOTIFICATION_TYPE_INTERIM)) {
+                    Log.v(TAG, "Sending response for available playerchanged:");
+                    deviceFeatures[deviceIndex].mAvailablePlayersChangedNT =
+                                                 AvrcpConstants.NOTIFICATION_TYPE_CHANGED;
+                    registerNotificationRspAvalPlayerChangedNative(
+                            AvrcpConstants.NOTIFICATION_TYPE_CHANGED,
+                            getByteAddress(deviceFeatures[deviceIndex].mCurrentDevice));
+                    mAvailablePlayerViewChanged = false;
+                }
                 break;
 
             case EVT_ADDR_PLAYER_CHANGED:
@@ -2348,7 +2347,16 @@ public final class Avrcp_ext {
         if (DEBUG) Log.d(TAG, debugLine);
         Log.d(TAG, "Exit sendPlayPosNotificationRsp");
     }
-
+    private boolean isTwsPlusDeviceConnected() {
+        for (int i = 0; i < maxAvrcpConnections; i++) {
+            if (deviceFeatures[i].mCurrentDevice != null &&
+                deviceFeatures[i].mCurrentDevice.isTwsPlusDevice()) {
+                Log.d(TAG,"TWS+ Device Connected");
+                return true;
+            }
+        }
+        return false;
+    }
     /**
      * This is called from AudioService. It will return whether this device supports abs volume.
      * NOT USED AT THE MOMENT.
@@ -2382,7 +2390,19 @@ public final class Avrcp_ext {
      * requesting our handler to call setVolumeNative()
      */
     public void adjustVolume(int direction) {
-        Log.d(TAG, "pts_test = " + pts_test + " direction = " + direction);
+        Log.d(TAG, "MSG_ADJUST_VOLUME");
+        Message msg = mHandler.obtainMessage(MSG_ADJUST_VOLUME, direction, 0);
+        mHandler.sendMessage(msg);
+    }
+
+    public void setAbsoluteVolume(int volume) {
+        Log.v(TAG, "Enter setAbsoluteVolume");
+        if (volume == mLocalVolume) {
+            if (DEBUG) Log.v(TAG, "setAbsoluteVolume is setting same index, ignore " + volume);
+            return;
+        }
+        Log.d(TAG, "pts_test = " + pts_test + " volume = " + volume +
+                " local volume = " + mLocalVolume);
         if (pts_test) {
             AvrcpControllerService avrcpCtrlService =
                     AvrcpControllerService.getAvrcpControllerService();
@@ -2392,14 +2412,16 @@ public final class Avrcp_ext {
                     if (deviceFeatures[i].mCurrentDevice != null) {
                         Log.d(TAG, "SendPassThruPlay command sent for = "
                                 + deviceFeatures[i].mCurrentDevice);
-                        if (direction == 1) {
+                        if (volume > mLocalVolume) {
+                            Log.d(TAG, "Vol Passthrough Up");
                             avrcpCtrlService.sendPassThroughCmd(
                                 deviceFeatures[i].mCurrentDevice, AVRC_ID_VOL_UP,
                                 AvrcpConstants.KEY_STATE_PRESS);
                             avrcpCtrlService.sendPassThroughCmd(
                                 deviceFeatures[i].mCurrentDevice, AVRC_ID_VOL_UP,
                                 AvrcpConstants.KEY_STATE_RELEASE);
-                        } else if (direction == -1) {
+                        } else if (volume < mLocalVolume) {
+                           Log.d(TAG, "Vol Passthrough Down");
                            avrcpCtrlService.sendPassThroughCmd(
                                 deviceFeatures[i].mCurrentDevice, AVRC_ID_VOL_DOWN,
                                 AvrcpConstants.KEY_STATE_PRESS);
@@ -2407,29 +2429,18 @@ public final class Avrcp_ext {
                                 deviceFeatures[i].mCurrentDevice, AVRC_ID_VOL_DOWN,
                                 AvrcpConstants.KEY_STATE_RELEASE);
                         }
+                        mLocalVolume = volume;
                     }
                 }
             } else {
                 Log.d(TAG, "passthru command not sent, connection unavailable");
             }
         } else {
-            Log.d(TAG, "MSG_ADJUST_VOLUME");
-            Message msg = mHandler.obtainMessage(MSG_ADJUST_VOLUME, direction, 0);
+            mHandler.removeMessages(MSG_ADJUST_VOLUME);
+            Message msg = mHandler.obtainMessage(MSG_SET_ABSOLUTE_VOLUME, volume, 0);
             mHandler.sendMessage(msg);
+            Log.v(TAG, "Exit setAbsoluteVolume");
         }
-    }
-
-    public void setAbsoluteVolume(int volume) {
-        Log.v(TAG, "Enter setAbsoluteVolume");
-        if (volume == mLocalVolume) {
-            if (DEBUG) Log.v(TAG, "setAbsoluteVolume is setting same index, ignore "+volume);
-            return;
-        }
-
-        mHandler.removeMessages(MSG_ADJUST_VOLUME);
-        Message msg = mHandler.obtainMessage(MSG_SET_ABSOLUTE_VOLUME, volume, 0);
-        mHandler.sendMessage(msg);
-        Log.v(TAG, "Exit setAbsoluteVolume");
     }
 
     /* Called in the native layer as a btrc_callback to return the volume set on the carkit in the
@@ -2763,7 +2774,14 @@ public final class Avrcp_ext {
         Message msg = mHandler.obtainMessage(MSG_SET_A2DP_AUDIO_STATE, state, 0, device);
         mHandler.sendMessage(msg);
     }
-
+    private boolean isTwsPlusPair(BluetoothDevice target_dev, BluetoothDevice curr_dev) {
+        if (target_dev.isTwsPlusDevice() && curr_dev.isTwsPlusDevice() &&
+            curr_dev.getTwsPlusPeerAddress().equals(target_dev.getAddress())) {
+            Log.i(TAG,"isTwsPlusPair = Yes");
+            return true;
+        }
+        return false;
+    }
     public void setAvrcpConnectedDevice(BluetoothDevice device) {
         Log.i(TAG,"setAvrcpConnectedDevice, Device added is " + device);
         boolean isPreviousDeviceActive = false;
@@ -2841,7 +2859,8 @@ public final class Avrcp_ext {
             }
             else if (deviceFeatures[i].mCurrentDevice != null &&
                     !(deviceFeatures[i].mCurrentDevice.equals(device)) &&
-                    deviceFeatures[i].isActiveDevice) {
+                    deviceFeatures[i].isActiveDevice &&
+                    !isTwsPlusPair(deviceFeatures[i].mCurrentDevice, device)) {
                 deviceFeatures[i].isActiveDevice = false;
                 Log.i(TAG,"Active device set to false at index =  " + i);
             }
@@ -3560,9 +3579,11 @@ public final class Avrcp_ext {
             return "";
         }
 
-        String packageName = player.getPackageName();
-        if (DEBUG) Log.v(TAG, "Player " + id + " package: " + packageName);
-        return packageName;
+        synchronized (this) {
+            String packageName = player.getPackageName();
+            if (DEBUG) Log.v(TAG, "Player " + id + " package: " + packageName);
+            return packageName;
+        }
     }
 
     /* from the global object, getting the current browsed player's package name */
@@ -4120,19 +4141,21 @@ public final class Avrcp_ext {
         }
 
         public void SendSetPlayerAppRsp(int attr_status, byte[] address) {
-            for (int i = 0; i < maxAvrcpConnections; i++) {
-                if (deviceFeatures[i].mCurrentDevice != null &&
-                    deviceFeatures[i].mPlayerStatusChangeNT ==
-                        AvrcpConstants.NOTIFICATION_TYPE_INTERIM) {
-                    Log.v(TAG,"device has registered for mPlayerAppSettingStatusChangeNT");
-                    deviceFeatures[i].mPlayerStatusChangeNT =
-                            AvrcpConstants.NOTIFICATION_TYPE_CHANGED;
-                    mAvrcpPlayerAppSettings.sendPlayerAppChangedRsp(
-                            deviceFeatures[i].mPlayerStatusChangeNT,
-                            deviceFeatures[i].mCurrentDevice);
-                 } else {
-                    Log.v(TAG,"Drop Set Attr Val update from media player");
-                 }
+            if (attr_status != AvrcpConstants.RSP_INTERNAL_ERR) {
+                for (int i = 0; i < maxAvrcpConnections; i++) {
+                    if (deviceFeatures[i].mCurrentDevice != null &&
+                        deviceFeatures[i].mPlayerStatusChangeNT ==
+                            AvrcpConstants.NOTIFICATION_TYPE_INTERIM) {
+                        Log.v(TAG,"device has registered for mPlayerAppSettingStatusChangeNT");
+                        deviceFeatures[i].mPlayerStatusChangeNT =
+                                AvrcpConstants.NOTIFICATION_TYPE_CHANGED;
+                        mAvrcpPlayerAppSettings.sendPlayerAppChangedRsp(
+                                deviceFeatures[i].mPlayerStatusChangeNT,
+                                deviceFeatures[i].mCurrentDevice);
+                    } else {
+                        Log.v(TAG,"Drop Set Attr Val update from media player");
+                    }
+                }
             }
             if ((address != null) && (!SendSetPlayerAppRspNative(attr_status, address))) {
                 Log.e(TAG, "SendSetPlayerAppRspNative failed!");

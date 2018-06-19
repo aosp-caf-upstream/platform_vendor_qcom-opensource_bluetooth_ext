@@ -41,6 +41,7 @@
 #include "osi/include/allocator.h"
 #include "device/include/interop.h"
 #include "btcore/include/module.h"
+#include "btif/include/btif_storage.h"
 
 #if defined(OS_GENERIC)
 static const char *INTEROP_FILE_PATH = "interop_database.conf";
@@ -153,6 +154,29 @@ bool interop_match_name(const interop_feature_t feature,
 {
   assert(name);
   return (interop_database_match_name(feature, name));
+}
+
+bool interop_match_addr_or_name(const interop_feature_t feature,
+                const RawAddress *addr)
+{
+  assert(addr);
+
+  bt_bdname_t bdname;
+  bt_property_t prop_name;
+
+  if (interop_match_addr(feature, addr))
+    return true;
+
+  BTIF_STORAGE_FILL_PROPERTY(&prop_name, BT_PROPERTY_BDNAME,
+      sizeof(bt_bdname_t), bdname.name);
+
+  if (btif_storage_get_remote_device_property(const_cast<RawAddress *>(addr),
+      &prop_name) != BT_STATUS_SUCCESS)
+    return false;
+  if (strlen((const char *)bdname.name) == 0)
+    return false;
+
+  return interop_match_name(feature, (const char *)bdname.name);
 }
 
 bool interop_match_manufacturer(const interop_feature_t feature,
@@ -515,8 +539,7 @@ static bool interop_database_match_( interop_db_entry_t *entry,
           interop_name_entry_t *cur = &db_entry->entry_type.name_entry;
 
           if ((src->feature == cur->feature) &&
-              (strlen(src->name) == cur->length) &&
-              (strncasecmp(src->name, cur->name, cur->length) == 0)) {
+              (strcasestr(src->name, cur->name) != NULL)) {
             if (ret_entry) {
               *ret_entry = db_entry;
             }

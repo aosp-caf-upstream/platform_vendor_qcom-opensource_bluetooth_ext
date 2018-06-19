@@ -1,3 +1,4 @@
+ifneq ($(TARGET_HAS_LOW_RAM), true)
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
@@ -26,6 +27,6 @@ LOCAL_CERTIFICATE := platform
 LOCAL_MODULE_OWNER := qti
 
 LOCAL_PROGUARD_ENABLED := disabled
-
+LOCAL_PRIVATE_PLATFORM_APIS := true
 include $(BUILD_PACKAGE)
-
+endif

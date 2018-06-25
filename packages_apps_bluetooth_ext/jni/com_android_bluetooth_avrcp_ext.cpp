@@ -907,6 +907,10 @@ static jboolean getPlayStatusRspNative(JNIEnv* env, jobject object,
 }
 static jboolean updatePlayStatusToStack(JNIEnv *env ,jobject object, jint playStatus) {
   ALOGE("%s",__func__);
+  if (!sBluetoothAvrcpInterface) {
+    ALOGE("%s: sBluetoothAvrcpInterface is null ", __func__);
+    return JNI_FALSE;
+  }
   bt_status_t status = sBluetoothAvrcpInterface->update_play_status_to_stack(
                                                  (btrc_play_status_t) playStatus);
   if (status != BT_STATUS_SUCCESS) {
@@ -1882,8 +1886,7 @@ static jboolean getFolderItemsRspNative(
     if (p_items && p_folder_types && p_playable && p_item_types && p_item_uid &&
         /* attributes can be null if remote requests 0 attributes */
         ((numAttrs != NULL && p_num_attrs) || (!numAttrs && !p_num_attrs)) &&
-        ((attributesIds != NULL && p_attributesIds) ||
-         (!attributesIds && !p_attributesIds))) {
+        (attributesIds != NULL && p_attributesIds)) {
       memset(p_items, 0, sizeof(btrc_folder_items_t) * numItems);
       if (scope == BTRC_SCOPE_FILE_SYSTEM || scope == BTRC_SCOPE_SEARCH ||
           scope == BTRC_SCOPE_NOW_PLAYING) {

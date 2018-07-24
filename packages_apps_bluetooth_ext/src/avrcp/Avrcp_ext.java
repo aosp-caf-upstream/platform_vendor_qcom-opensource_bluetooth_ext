@@ -483,7 +483,7 @@ public final class Avrcp_ext {
         IntentFilter bootFilter = new IntentFilter();
         bootFilter.addAction(Intent.ACTION_USER_UNLOCKED);
         context.registerReceiver(mBootReceiver, bootFilter);
-        pts_test = SystemProperties.getBoolean("bt.avrcpct-passthrough.pts", false);
+        pts_test = SystemProperties.getBoolean("vendor.bluetooth.avrcpct-passthrough.pts", false);
         avrcp_playstatus_blacklist = SystemProperties.getBoolean("bt.avrcp-playstatus.blacklist", false);
 
         // create Notification channel.
@@ -1740,8 +1740,7 @@ public final class Avrcp_ext {
                     && (mediaNumber.equals(other.mediaNumber))
                     && (mediaTotalNumber.equals(other.mediaTotalNumber))
                     && (genre.equals(other.genre))
-                    && (playingTimeMs == other.playingTimeMs)
-                    && (coverArt == null?true:(coverArt.equals(other.coverArt)));
+                    && (playingTimeMs == other.playingTimeMs);
         }
 
         public synchronized String getString(int attrId) {
@@ -1956,19 +1955,12 @@ public final class Avrcp_ext {
                 Log.v(TAG, "Send track changed");
                 mMediaAttributes = currentAttributes;
                 mLastQueueId = newQueueId;
-                if (device != null) {
-                    int idx = getIndexForDevice(device);
-                    if ((idx != INVALID_DEVICE_INDEX) &&
-                            deviceFeatures[idx].mTrackChangedNT == AvrcpConstants.NOTIFICATION_TYPE_INTERIM)
-                    sendTrackChangedRsp(false, device);
-                } else {
-                    for (int i = 0; i < maxAvrcpConnections; i++) {
-                        if ((deviceFeatures[i].mCurrentDevice != null) &&
-                            (deviceFeatures[i].mTrackChangedNT == AvrcpConstants.NOTIFICATION_TYPE_INTERIM)) {
-                            deviceFeatures[i].mTracksPlayed++;
-                            Log.v(TAG,"sending track change for device " + i);
-                            sendTrackChangedRsp(false, deviceFeatures[i].mCurrentDevice);
-                        }
+                for (int i = 0; i < maxAvrcpConnections; i++) {
+                    if ((deviceFeatures[i].mCurrentDevice != null) &&
+                        (deviceFeatures[i].mTrackChangedNT == AvrcpConstants.NOTIFICATION_TYPE_INTERIM)) {
+                         deviceFeatures[i].mTracksPlayed++;
+                         Log.v(TAG,"sending track change for device " + i);
+                         sendTrackChangedRsp(false, deviceFeatures[i].mCurrentDevice);
                     }
                 }
             }
@@ -2130,9 +2122,9 @@ public final class Avrcp_ext {
                     Log.v(TAG,"split enabled");
                 }
                 if (isSplitA2dpEnabled) {
-                    update_interval = SystemProperties.getLong("persist.bt.avrcp.pos_time", 3000L);
+                    update_interval = SystemProperties.getLong("persist.vendor.btstack.avrcp.pos_time", 3000L);
                 } else {
-                    update_interval = SystemProperties.getLong("persist.bt.avrcp.pos_time", 1000L);
+                    update_interval = SystemProperties.getLong("persist.vendor.btstack.avrcp.pos_time", 1000L);
                 }
                 deviceFeatures[deviceIndex].mPlayPosChangedNT =
                                              AvrcpConstants.NOTIFICATION_TYPE_INTERIM;
@@ -3977,7 +3969,8 @@ public final class Avrcp_ext {
             if (DEBUG) Log.d(TAG, "handleGetTotalNumOfItemsResponse: " + numPlayers + " players.");
             getTotalNumOfItemsRspNative(bdaddr, AvrcpConstants.RSP_NO_ERROR, 0, numPlayers);
         } else if (scope == AvrcpConstants.BTRC_SCOPE_NOW_PLAYING) {
-            if (mCurrAddrPlayerID == NO_PLAYER_ID) {
+            if (mMediaController == null) {
+                Log.e(TAG, "Could not get Total NumOfItems. mMediaController is null");
                 getTotalNumOfItemsRspNative(bdaddr, AvrcpConstants.RSP_NO_AVBL_PLAY, 0, 0);
                 return;
             }
@@ -4509,8 +4502,15 @@ public final class Avrcp_ext {
             return;
         }
         deviceFeatures[deviceIndex].isActiveDevice = true;
-        if (maxAvrcpConnections > 1)
-            deviceFeatures[1-deviceIndex].isActiveDevice = false;
+        if (maxAvrcpConnections > 1) {
+            if (deviceFeatures[1-deviceIndex].mCurrentDevice != null &&
+                deviceFeatures[1-deviceIndex].mCurrentDevice.isTwsPlusDevice() &&
+                isTwsPlusPair(deviceFeatures[1-deviceIndex].mCurrentDevice, device)) {
+                Log.d(TAG,"TWS+ pair connected, keep both devices active");
+            } else {
+                deviceFeatures[1-deviceIndex].isActiveDevice = false;
+            }
+        }
         Log.e(TAG,"AVRCP setActive  addr " + deviceFeatures[deviceIndex].mCurrentDevice.getAddress() +
                     " isActive device index " + deviceIndex + " absolute volume supported "+
                     deviceFeatures[deviceIndex].isAbsoluteVolumeSupportingDevice  + " local volume " +
@@ -4570,8 +4570,18 @@ public final class Avrcp_ext {
 
         int action = KeyEvent.ACTION_DOWN;
         if (state == AvrcpConstants.KEY_STATE_RELEASE) action = KeyEvent.ACTION_UP;
-
-        if ((mA2dpService != null) && !Objects.equals(mA2dpService.getActiveDevice(), device)) {
+        BluetoothDevice a2dp_active_device = null;
+        boolean skip = false;;
+        if (mA2dpService != null) a2dp_active_device = mA2dpService.getActiveDevice();
+        if (a2dp_active_device != null) {
+            if (a2dp_active_device.isTwsPlusDevice() &&
+                (isTwsPlusPair(a2dp_active_device, device) ||
+                Objects.equals(a2dp_active_device, device))) {
+                Log.d(TAG,"Passthrough received from TWS+ Pair");
+                skip = true;
+            }
+        }
+        if (!skip && (mA2dpService != null) && !Objects.equals(a2dp_active_device, device)) {
             Log.w(TAG, "code " + code + " action " + action + " from inactive device");
             if (code == KeyEvent.KEYCODE_MEDIA_PLAY) {
                 if (isPlayingState(mCurrentPlayerState) &&

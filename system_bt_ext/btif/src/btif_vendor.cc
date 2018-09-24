@@ -77,6 +77,7 @@
 #include "btm_api.h"
 #include "profile_config.h"
 #include "btif_tws_plus.h"
+#include "btif_api.h"
 
 #if TEST_APP_INTERFACE == TRUE
 #include <bt_testapp.h>
@@ -92,8 +93,9 @@ typedef struct {
   uint16_t error_info;
   uint32_t event_mask;
   uint8_t power_level;
-  uint8_t rssi;
+  int8_t rssi;
   uint8_t link_quality;
+  uint16_t glitch_count;
   uint8_t lmp_ver;
   uint16_t lmp_subver;
   uint16_t manufacturer_id;
@@ -102,7 +104,7 @@ typedef struct {
 
 extern bt_status_t btif_in_execute_service_request(tBTA_SERVICE_ID service_id,
                                                bool b_enable);
-extern bt_status_t btif_storage_get_remote_device_property(RawAddress *remote_bd_addr,
+extern bt_status_t btif_storage_get_remote_device_property(const RawAddress *remote_bd_addr,
                                                bt_property_t *property);
 extern tBTM_STATUS BTM_ReadRemoteVersion(const RawAddress& addr, uint8_t* lmp_version,
                                   uint16_t* manufacturer,
@@ -157,6 +159,7 @@ static void btif_vendor_bredr_cleanup_event(uint16_t event, char *p_param)
         if (i != BTA_BLE_SERVICE_ID && (service_mask &
               (tBTA_SERVICE_MASK)(BTA_SERVICE_ID_TO_SERVICE_MASK(i))))
         {
+            btif_reset_service(i);
             btif_in_execute_service_request(i, FALSE);
         }
     }
@@ -173,7 +176,8 @@ static void btif_vendor_send_iot_info_cb(uint16_t event, char *p_param)
             broadcast_cb_data.error_info, broadcast_cb_data.event_mask,
             broadcast_cb_data.lmp_ver, broadcast_cb_data.lmp_subver,
             broadcast_cb_data.manufacturer_id, broadcast_cb_data.power_level,
-            broadcast_cb_data.rssi, broadcast_cb_data.link_quality);
+            broadcast_cb_data.rssi, broadcast_cb_data.link_quality,
+            broadcast_cb_data.glitch_count);
 }
 
 void btif_broadcast_timer_cb(UNUSED_ATTR void *data) {
@@ -188,26 +192,62 @@ void btif_vendor_cleanup_iot_broadcast_timer()
     }
 }
 
+static void btif_vendor_get_remote_version(const RawAddress* bd_addr,
+        uint8_t* lmp_version, uint16_t* manufacturer, uint16_t* lmp_sub_version)
+{
+    bt_property_t prop;
+    bt_remote_version_t info;
+    uint8_t tmp_lmp_ver = 0;
+    uint16_t tmp_manufacturer = 0;
+    uint16_t tmp_lmp_subver = 0;
+    tBTM_STATUS status;
+
+    if (bd_addr == NULL)
+        return;
+
+    status = BTM_ReadRemoteVersion(*bd_addr, &tmp_lmp_ver, &tmp_manufacturer, &tmp_lmp_subver);
+    if (status == BTM_SUCCESS && (tmp_lmp_ver || tmp_manufacturer || tmp_lmp_subver)) {
+        if (lmp_version) *lmp_version = tmp_lmp_ver;
+        if (manufacturer) *manufacturer = tmp_manufacturer;
+        if (lmp_sub_version) *lmp_sub_version = tmp_lmp_subver;
+        return;
+    }
+
+    prop.type = BT_PROPERTY_REMOTE_VERSION_INFO;
+    prop.len = sizeof(bt_remote_version_t);
+    prop.val = (void*)&info;
+
+    if (btif_storage_get_remote_device_property(bd_addr, &prop) ==
+            BT_STATUS_SUCCESS) {
+        if (lmp_version) *lmp_version = (uint8_t)info.version;
+        if (manufacturer) *manufacturer = (uint16_t)info.manufacturer;
+        if (lmp_sub_version) *lmp_sub_version = (uint16_t)info.sub_ver;
+    }
+}
+
 void btif_vendor_iot_device_broadcast_event(RawAddress* bd_addr,
                 uint16_t error, uint16_t error_info, uint32_t event_mask,
-                uint8_t power_level, uint8_t rssi, uint8_t link_quality)
+                uint8_t power_level, int8_t rssi, uint8_t link_quality,
+                uint16_t glitch_count)
 {
-    uint8_t lmp_ver;
-    uint16_t lmp_subver, manufacturer_id;
+    uint8_t lmp_ver = 0;
+    uint16_t lmp_subver = 0;
+    uint16_t manufacturer_id = 0;
 
-    BTM_ReadRemoteVersion(*bd_addr, &lmp_ver, &manufacturer_id, &lmp_subver);
-    if(error == BT_SOC_A2DP_GLITCH || error == BT_HOST_A2DP_GLITCH)
+    btif_vendor_get_remote_version(bd_addr, &lmp_ver, &manufacturer_id, &lmp_subver);
+    if((error == BT_SOC_A2DP_GLITCH || error == BT_HOST_A2DP_GLITCH) && (glitch_count == 0))
     {
         if(broadcast_cb_data.is_valid)
         {
             broadcast_cb_data.error_info = broadcast_cb_data.error_info|error_info;
-            if(error == BT_SOC_A2DP_GLITCH && broadcast_cb_data.error_info == BT_HOST_A2DP_GLITCH)
+            if(error == BT_SOC_A2DP_GLITCH && broadcast_cb_data.error == BT_HOST_A2DP_GLITCH)
             {
                 broadcast_cb_data.event_mask = broadcast_cb_data.event_mask|event_mask;
                 broadcast_cb_data.power_level = power_level;
                 broadcast_cb_data.rssi = rssi;
                 broadcast_cb_data.link_quality = link_quality;
             }
+            broadcast_cb_data.glitch_count += glitch_count;
             return;
         }
         else if(broadcast_cb_timer)
@@ -219,6 +259,7 @@ void btif_vendor_iot_device_broadcast_event(RawAddress* bd_addr,
             broadcast_cb_data.power_level = power_level;
             broadcast_cb_data.rssi = rssi;
             broadcast_cb_data.link_quality = link_quality;
+            broadcast_cb_data.glitch_count = glitch_count;
             broadcast_cb_data.lmp_ver = lmp_ver;
             broadcast_cb_data.lmp_subver = lmp_subver;
             broadcast_cb_data.manufacturer_id = manufacturer_id;
@@ -231,13 +272,34 @@ void btif_vendor_iot_device_broadcast_event(RawAddress* bd_addr,
 
     HAL_CBACK(bt_vendor_callbacks, iot_device_broadcast_cb, bd_addr,
             error, error_info, event_mask, lmp_ver, lmp_subver,
-            manufacturer_id, power_level, rssi, link_quality);
+            manufacturer_id, power_level, rssi, link_quality,
+            glitch_count);
 }
 static void bredrcleanup(void)
 {
     LOG_INFO(LOG_TAG,"bredrcleanup");
     btif_transfer_context(btif_vendor_bredr_cleanup_event,BTIF_VENDOR_BREDR_CLEANUP,
                           NULL, 0, NULL);
+}
+
+#if HCI_RAW_CMD_INCLUDED == TRUE
+// Callback invoked on receiving HCI event
+static void btif_vendor_hci_event_callback ( tBTM_RAW_CMPL *p)
+{
+  if((p != NULL) && (bt_vendor_callbacks!= NULL)
+      && (bt_vendor_callbacks->hci_event_recv_cb != NULL)) {
+
+    BTIF_TRACE_DEBUG("%s", __FUNCTION__);
+    HAL_CBACK(bt_vendor_callbacks, hci_event_recv_cb, p->event_code, p->p_param_buf,
+                                                                p->param_len);
+  }
+}
+#endif
+
+int hci_cmd_send(uint16_t opcode, uint8_t* buf, uint8_t len)
+{
+    BTIF_TRACE_DEBUG("hci_cmd_send");
+    return BTA_DmHciRawCommand(opcode, len, buf, btif_vendor_hci_event_callback);
 }
 
 static void set_wifi_state(bool status)
@@ -352,6 +414,7 @@ static const void* get_testapp_interface(int test_app_profile)
 static const btvendor_interface_t btvendorInterface = {
     sizeof(btvendorInterface),
     init,
+    hci_cmd_send,
 #if TEST_APP_INTERFACE == TRUE
     get_testapp_interface,
 #else

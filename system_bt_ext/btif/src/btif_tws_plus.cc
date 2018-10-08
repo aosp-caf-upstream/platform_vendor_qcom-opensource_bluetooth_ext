@@ -102,8 +102,8 @@ bt_status_t btif_tws_plus_replace_earbud ( RawAddress *addr,
 
 static bool btif_tws_plus_update_rmt_dev_props(RawAddress* bd_addr,
                                             RawAddress* peer_bd_addr) {
-  bt_property_t remote_properties[8];
-  uint32_t num_props = 0;
+  bt_property_t remote_properties[8], properties_update[8];
+  uint32_t num_props = 0, num_props_u = 0;
 
   bt_bdname_t name;
   uint32_t cod, devtype;
@@ -124,8 +124,7 @@ static bool btif_tws_plus_update_rmt_dev_props(RawAddress* bd_addr,
         btif_storage_get_remote_device_property(bd_addr,
                                           &remote_properties[num_props]);
         LOG_ERROR(LOG_TAG,"fetching from other ear bud %s", name.name);
-        btif_storage_set_remote_device_property(peer_bd_addr,
-                                &remote_properties[num_props]);
+        memcpy(&properties_update[num_props_u++], &remote_properties[num_props], sizeof remote_properties[0]);
     }
     num_props++;
   }
@@ -136,8 +135,7 @@ static bool btif_tws_plus_update_rmt_dev_props(RawAddress* bd_addr,
                                           &remote_properties[num_props]);
 
   if (*bd_addr != *peer_bd_addr) {
-    btif_storage_set_remote_device_property(peer_bd_addr,
-                                &remote_properties[num_props]);
+      memcpy(&properties_update[num_props_u++], &remote_properties[num_props], sizeof remote_properties[0]);
   }
   num_props++;
 
@@ -148,8 +146,7 @@ static bool btif_tws_plus_update_rmt_dev_props(RawAddress* bd_addr,
                                           &remote_properties[num_props]);
 
   if (*bd_addr != *peer_bd_addr) {
-    btif_storage_set_remote_device_property(peer_bd_addr,
-                                &remote_properties[num_props]);
+      memcpy(&properties_update[num_props_u++], &remote_properties[num_props], sizeof remote_properties[0]);
   }
   num_props++;
 
@@ -159,10 +156,12 @@ static bool btif_tws_plus_update_rmt_dev_props(RawAddress* bd_addr,
                                           &remote_properties[num_props]);
 
   if (*bd_addr != *peer_bd_addr) {
-    btif_storage_set_remote_device_property(peer_bd_addr,
-                                &remote_properties[num_props]);
+      memcpy(&properties_update[num_props_u++], &remote_properties[num_props], sizeof remote_properties[0]);
   }
   num_props++;
+
+  BTIF_TRACE_DEBUG("%s: remote device properties update: %d", __func__, num_props_u);
+  btif_storage_set_remote_device_properties(peer_bd_addr, properties_update, num_props_u);
 
   HAL_CBACK(bt_hal_cbacks, remote_device_properties_cb, BT_STATUS_SUCCESS,
             peer_bd_addr, num_props, remote_properties);
@@ -345,6 +344,8 @@ static void btif_tws_plus_upstreams_evt(uint16_t event, char* p_param) {
           BTIF_TRACE_DEBUG("%s() Bd addr found from SDP query : %s ", __func__,
           p_data->sdp_search_comp.peer_eb_addr.ToString().c_str());
 
+          btif_tws_plus_set_peer_eb_addr(&p_data->sdp_search_comp.eb_addr,
+                                        &p_data->sdp_search_comp.peer_eb_addr);
           if (btif_config_get_bin(p_data->sdp_search_comp.eb_addr.ToString().c_str(),
                                   "LinkKey", link_key, &size)) {
             btif_tws_plus_derive_link_key(p_data->sdp_search_comp.eb_addr,
@@ -356,10 +357,10 @@ static void btif_tws_plus_upstreams_evt(uint16_t event, char* p_param) {
           // update bond state changed for first device
           RawAddress eb_bd_addr = RawAddress::kEmpty;
           bond_state_changed(BT_STATUS_SUCCESS,
-                p_data->lk_derived.bd_addr, BT_BOND_STATE_BONDED);
-          btif_tws_plus_update_rmt_dev_props( &p_data->lk_derived.bd_addr,
-                                            &p_data->lk_derived.bd_addr);
-          btif_tws_plus_set_peer_eb_addr(&p_data->lk_derived.bd_addr,
+                p_data->sdp_search_comp.eb_addr, BT_BOND_STATE_BONDED);
+          btif_tws_plus_update_rmt_dev_props(&p_data->sdp_search_comp.eb_addr,
+                                            &p_data->sdp_search_comp.eb_addr);
+          btif_tws_plus_set_peer_eb_addr(&p_data->sdp_search_comp.eb_addr,
                                          &eb_bd_addr);
       }
       break;

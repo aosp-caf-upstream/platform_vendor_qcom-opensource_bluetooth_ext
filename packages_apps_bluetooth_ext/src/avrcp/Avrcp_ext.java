@@ -3112,8 +3112,9 @@ public final class Avrcp_ext {
         BluetoothDevice mDevice = mA2dpService.getActiveDevice();
         //validating device is connected
         int index = getIndexForDevice(device);
-        if (index != INVALID_DEVICE_INDEX &&
-            mDevice != null && mDevice.equals(deviceFeatures[index].mCurrentDevice)) {
+        if (index != INVALID_DEVICE_INDEX && mDevice != null &&
+            (mDevice.equals(deviceFeatures[index].mCurrentDevice) ||
+            (mDevice.isTwsPlusDevice() && device.isTwsPlusDevice()))) {
             setActiveDevice(mDevice);
             //below line to send setAbsolute volume if device is suporting absolute volume
             if (mDevice.equals(deviceFeatures[index].mCurrentDevice))

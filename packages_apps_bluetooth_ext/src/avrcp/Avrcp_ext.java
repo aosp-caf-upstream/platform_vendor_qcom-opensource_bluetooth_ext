@@ -792,11 +792,12 @@ public final class Avrcp_ext {
                     if (deviceFeatures[deviceIndex].mAbsVolThreshold > 0 &&
                         deviceFeatures[deviceIndex].mAbsVolThreshold <
                         mAudioStreamMax &&
-                        vol > deviceFeatures[deviceIndex].mAbsVolThreshold)
+                        vol > deviceFeatures[deviceIndex].mAbsVolThreshold) {
                         if (DEBUG) Log.v(TAG, "remote inital volume too high " + vol + ">" +
                             deviceFeatures[deviceIndex].mAbsVolThreshold);
                         vol = deviceFeatures[deviceIndex].mAbsVolThreshold;
                         notifyVolumeChanged(vol, false);
+                    }
                 }
                 if (vol >= 0) {
                     vol = convertToAvrcpVolume(vol);
@@ -1621,6 +1622,19 @@ public final class Avrcp_ext {
         }
     }
 
+    private boolean isPlayerPaused() {
+        if (mCurrentPlayerState == null)
+            return false;
+
+        int state = mCurrentPlayerState.getState();
+        Log.d(TAG, "isPlayerPaused: state=" + state);
+
+        return (state == PlaybackState.STATE_PAUSED ||
+            state == PlaybackState.STATE_STOPPED ||
+            state == PlaybackState.STATE_NONE);
+    }
+
+
     private boolean areMultipleDevicesConnected() {
         for (int deviceIndex = 0; deviceIndex < maxAvrcpConnections; deviceIndex++) {
             if (deviceFeatures[deviceIndex].mCurrentDevice == null) {
@@ -2362,7 +2376,7 @@ public final class Avrcp_ext {
                     return -1L;
             }
 
-            if (isPlayingState(deviceFeatures[deviceIndex].mCurrentPlayState)) {
+            if (isPlayingState(deviceFeatures[deviceIndex].mCurrentPlayState) && !isPlayerPaused()) {
                 long sinceUpdate =
                      SystemClock.elapsedRealtime() - deviceFeatures[deviceIndex].mLastStateUpdate;
                 currPosition = sinceUpdate + deviceFeatures[deviceIndex].mCurrentPlayState.getPosition();
@@ -2500,7 +2514,7 @@ public final class Avrcp_ext {
         mHandler.removeMessages(currMsgPlayIntervalTimeout);
         if ((deviceFeatures[i].mCurrentDevice != null) &&
             (deviceFeatures[i].mPlayPosChangedNT == AvrcpConstants.NOTIFICATION_TYPE_INTERIM) &&
-                 (isPlayingState(deviceFeatures[i].mCurrentPlayState))) {
+                 (isPlayingState(deviceFeatures[i].mCurrentPlayState)) && !isPlayerPaused()) {
             Message msg = mHandler.obtainMessage(currMsgPlayIntervalTimeout, 0, 0,
                                                  deviceFeatures[i].mCurrentDevice);
             long delay = deviceFeatures[i].mPlaybackIntervalMs;
@@ -2738,7 +2752,7 @@ public final class Avrcp_ext {
 
     private int convertToAudioStreamVolume(int volume) {
         // Rescale volume to match AudioSystem's volume
-        return (int) Math.floor((double) volume*mAudioStreamMax/AVRCP_MAX_VOL);
+        return (int) Math.round((double) volume*mAudioStreamMax/AVRCP_MAX_VOL);
     }
 
     private int convertToAvrcpVolume(int volume) {
@@ -3502,7 +3516,9 @@ public final class Avrcp_ext {
                         mPackageManager.queryIntentServices(intent, PackageManager.MATCH_ALL);
 
                 for (ResolveInfo info : playerList) {
-                    String displayableName = info.loadLabel(mPackageManager).toString();
+                    CharSequence displayName = info.loadLabel(mPackageManager);
+                    String displayableName =
+                            (displayName != null) ? displayName.toString():new String();
                     String serviceName = info.serviceInfo.name;
                     String packageName = info.serviceInfo.packageName;
 
@@ -5271,8 +5287,14 @@ public final class Avrcp_ext {
             byte[] address);
 
     public static String getImgHandleFromTitle(String title) {
+        if (DEBUG) Log.d(TAG, " getImgHandleFromTitle title:" + title);
         if (mAvrcpBipRsp != null && title != null)
             return mAvrcpBipRsp.getImgHandle(mAvrcpBipRsp.getAlbumName(title));
-        return null;
+        return "";
+    }
+
+    public static String getImgHandleFromTitle(byte[] bdaddr, String title) {
+        if (DEBUG) Log.d(TAG, " getImgHandleFromTitle bdaddr:" + bdaddr + " title:" + title);
+        return getImgHandleFromTitle(title);
     }
 }

@@ -3116,7 +3116,8 @@ public final class Avrcp_ext {
             mDevice != null && mDevice.equals(deviceFeatures[index].mCurrentDevice)) {
             setActiveDevice(mDevice);
             //below line to send setAbsolute volume if device is suporting absolute volume
-            setAbsVolumeFlag(mDevice);
+            if (mDevice.equals(deviceFeatures[index].mCurrentDevice))
+                setAbsVolumeFlag(mDevice);//Do not call this funciton for second EB connect
             //When A2dp playing on DUT and Remote got connected, send proper playstatus
             if (isPlayingState(mCurrentPlayerState) &&
                 mA2dpService.isA2dpPlaying(device)) {

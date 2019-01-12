@@ -4807,6 +4807,9 @@ public final class Avrcp_ext {
                 deviceFeatures[1-deviceIndex].mCurrentDevice.isTwsPlusDevice() &&
                 isTwsPlusPair(deviceFeatures[1-deviceIndex].mCurrentDevice, device)) {
                 Log.d(TAG,"TWS+ pair connected, keep both devices active");
+                //Explicitly set it to true for usecase streaming handoff between
+                // speaker and TWS+ earbuds
+                deviceFeatures[1-deviceIndex].isActiveDevice = true;
             } else {
                 deviceFeatures[1-deviceIndex].isActiveDevice = false;
             }

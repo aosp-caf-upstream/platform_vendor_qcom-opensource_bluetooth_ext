@@ -88,6 +88,10 @@ final class Vendor {
         setWifiStateNative(status);
     }
 
+    public void HCIClose() {
+        hcicloseNative();
+    }
+
     public boolean getProfileInfo(int profile_id , int profile_info) {
         Log.d(TAG,"getProfileInfo profile_id: " + profile_id);
         return getProfileInfoNative(profile_id, profile_info);
@@ -216,4 +220,5 @@ final class Vendor {
     private native boolean getProfileInfoNative(int profile_id , int profile_info);
     private native boolean getQtiStackStatusNative();
     private native boolean voipNetworkWifiInfoNative(boolean isVoipStarted, boolean isNetworkWifi);
+    private native void hcicloseNative();
 }

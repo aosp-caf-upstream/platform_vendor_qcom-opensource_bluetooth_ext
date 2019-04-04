@@ -800,19 +800,21 @@ public final class Avrcp_ext {
                     vol = convertToAvrcpVolume(vol);
                     Log.d(TAG,"vol = " + vol + "rem vol = " + deviceFeatures[deviceIndex].mRemoteVolume);
                     if(vol != deviceFeatures[deviceIndex].mRemoteVolume &&
-                       deviceFeatures[deviceIndex].isAbsoluteVolumeSupportingDevice)
+                       deviceFeatures[deviceIndex].isAbsoluteVolumeSupportingDevice &&
+                       deviceFeatures[deviceIndex].mCurrentDevice != null) {
                        setVolumeNative(vol , getByteAddress(deviceFeatures[deviceIndex].mCurrentDevice));
                        if (deviceFeatures[deviceIndex].mCurrentDevice.isTwsPlusDevice()) {
                            AdapterService adapterService = AdapterService.getAdapterService();
                            BluetoothDevice peer_device =
                             adapterService.getTwsPlusPeerDevice(deviceFeatures[deviceIndex].mCurrentDevice);
                            if (peer_device != null &&
-                               getIndexForDevice(peer_device) != INVALID_DEVICE_INDEX) {
+                             getIndexForDevice(peer_device) != INVALID_DEVICE_INDEX) {
                                // Change volume to peer earbud as well
                                Log.d(TAG,"setting volume to TWS+ peer also");
                                setVolumeNative(vol, getByteAddress(peer_device));
                            }
                        }
+                    }
                 }
                 //mLastLocalVolume = -1;
                 break;
@@ -2069,6 +2071,10 @@ public final class Avrcp_ext {
                     && (mA2dpState == BluetoothA2dp.STATE_PLAYING)) {
                 Log.i(TAG, "Players updated current playback state is none," +
                             " skip updating playback state");
+            } else if (device == null && newState != null &&
+                    newState.getState() == PlaybackState.STATE_ERROR) {
+                Log.i(TAG, "Players updated current playback state is error," +
+                            " skip updating playback state");
             } else {
                 updatePlaybackState(newState, device);
             }
@@ -2387,8 +2393,17 @@ public final class Avrcp_ext {
                      SystemClock.elapsedRealtime() - deviceFeatures[deviceIndex].mLastStateUpdate;
                 currPosition = sinceUpdate + deviceFeatures[deviceIndex].mCurrentPlayState.getPosition();
             } else {
-                currPosition = deviceFeatures[deviceIndex].mCurrentPlayState.getPosition();
-
+                if (isPlayingState(deviceFeatures[deviceIndex].mCurrentPlayState) &&
+                    (avrcp_playstatus_blacklist && isPlayerStateUpdateBlackListed(
+                     deviceFeatures[deviceIndex].mCurrentDevice.getAddress(),
+                     deviceFeatures[deviceIndex].mCurrentDevice.getName()))) {
+                 currPosition = mCurrentPlayerState.getPosition();
+                 Log.d(TAG, "Remote is BLed for playstatus, So send playposition by fetching from "+
+                                   "mCurrentPlayerState." + currPosition);
+                } else {
+                  currPosition = deviceFeatures[deviceIndex].mCurrentPlayState.getPosition();
+                  Log.d(TAG, "getPlayPosition(): currPosition = " + currPosition);
+                }
             }
         } else {
             if (mCurrentPlayerState == null) {
@@ -3112,11 +3127,13 @@ public final class Avrcp_ext {
         BluetoothDevice mDevice = mA2dpService.getActiveDevice();
         //validating device is connected
         int index = getIndexForDevice(device);
-        if (index != INVALID_DEVICE_INDEX &&
-            mDevice != null && mDevice.equals(deviceFeatures[index].mCurrentDevice)) {
+        if (index != INVALID_DEVICE_INDEX && mDevice != null &&
+            (mDevice.equals(deviceFeatures[index].mCurrentDevice) ||
+            (mDevice.isTwsPlusDevice() && device.isTwsPlusDevice()))) {
             setActiveDevice(mDevice);
             //below line to send setAbsolute volume if device is suporting absolute volume
-            setAbsVolumeFlag(mDevice);
+            if (mDevice.equals(deviceFeatures[index].mCurrentDevice))
+                setAbsVolumeFlag(mDevice);//Do not call this funciton for second EB connect
             //When A2dp playing on DUT and Remote got connected, send proper playstatus
             if (isPlayingState(mCurrentPlayerState) &&
                 mA2dpService.isA2dpPlaying(device)) {
@@ -4805,6 +4822,9 @@ public final class Avrcp_ext {
                 deviceFeatures[1-deviceIndex].mCurrentDevice.isTwsPlusDevice() &&
                 isTwsPlusPair(deviceFeatures[1-deviceIndex].mCurrentDevice, device)) {
                 Log.d(TAG,"TWS+ pair connected, keep both devices active");
+                //Explicitly set it to true for usecase streaming handoff between
+                // speaker and TWS+ earbuds
+                deviceFeatures[1-deviceIndex].isActiveDevice = true;
             } else {
                 deviceFeatures[1-deviceIndex].isActiveDevice = false;
             }

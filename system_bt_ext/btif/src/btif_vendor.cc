@@ -147,7 +147,6 @@ static bt_status_t init( btvendor_callbacks_t* callbacks)
     broadcast_cb_timer = alarm_new("btif_vnd.cb_timer");
     LOG_INFO(LOG_TAG,"init");
     LOG_INFO(LOG_TAG,"init done");
-    btif_enable_service(BTA_TWS_PLUS_SERVICE_ID);
     return BT_STATUS_SUCCESS;
 }
 
@@ -303,6 +302,13 @@ static void bredrcleanup(void)
                           NULL, 0, NULL);
 }
 
+static void hciclose(void)
+{
+    LOG_INFO(LOG_TAG,"hciclose");
+    btif_hci_close();
+}
+
+
 #if HCI_RAW_CMD_INCLUDED == TRUE
 // Callback invoked on receiving HCI event
 static void btif_vendor_hci_event_callback ( tBTM_RAW_CMPL *p)
@@ -447,6 +453,7 @@ static const btvendor_interface_t btvendorInterface = {
     set_property_callouts,
     cleanup,
     voip_network_type_wifi,
+    hciclose,
 };
 
 /*******************************************************************************

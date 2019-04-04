@@ -88,6 +88,10 @@ final class Vendor {
         setWifiStateNative(status);
     }
 
+    public void HCIClose() {
+        hcicloseNative();
+    }
+
     public boolean getProfileInfo(int profile_id , int profile_info) {
         Log.d(TAG,"getProfileInfo profile_id: " + profile_id);
         return getProfileInfoNative(profile_id, profile_info);
@@ -142,6 +146,12 @@ final class Vendor {
         intent.putExtra(BluetoothDevice.EXTRA_GLITCH_COUNT, glitchCount);
         mService.sendBroadcast(intent, AdapterService.BLUETOOTH_PERM);
     }
+
+    void ssr_cleanup_callback() {
+        Log.e(TAG,"ssr_cleanup_callback");
+        mService.ssrCleanupCallback();
+    }
+
     void devicePropertyChangedCallback(byte[] address, int[] types, byte[][] values) {
         byte[] val;
         int type;
@@ -216,4 +226,5 @@ final class Vendor {
     private native boolean getProfileInfoNative(int profile_id , int profile_info);
     private native boolean getQtiStackStatusNative();
     private native boolean voipNetworkWifiInfoNative(boolean isVoipStarted, boolean isNetworkWifi);
+    private native void hcicloseNative();
 }

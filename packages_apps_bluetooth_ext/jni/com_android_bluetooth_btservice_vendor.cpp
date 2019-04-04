@@ -64,6 +64,7 @@ static jmethodID method_onBredrCleanup;
 static jmethodID method_iotDeviceBroadcast;
 static jmethodID method_devicePropertyChangedCallback;
 static jmethodID method_adapterPropertyChangedCallback;
+static jmethodID method_ssrCleanupCallback;
 
 static btvendor_interface_t *sBluetoothVendorInterface = NULL;
 static jobject mCallbacksObj = NULL;
@@ -114,6 +115,16 @@ static void bredr_cleanup_callback(bool status){
     if (!sCallbackEnv.valid()) return;
 
     sCallbackEnv->CallVoidMethod(mCallbacksObj, method_onBredrCleanup, (jboolean)status);
+}
+
+static void ssr_cleanup_callback(void){
+
+    ALOGI("%s", __FUNCTION__);
+    CallbackEnv sCallbackEnv(__func__);
+
+    if (!sCallbackEnv.valid()) return;
+
+    sCallbackEnv->CallVoidMethod(mCallbacksObj, method_ssrCleanupCallback);
 }
 
 static void iot_device_broadcast_callback(RawAddress* bd_addr, uint16_t error,
@@ -236,6 +247,7 @@ static btvendor_callbacks_t sBluetoothVendorCallbacks = {
     remote_device_properties_callback,
     NULL,
     adapter_vendor_properties_callback,
+    ssr_cleanup_callback,
 };
 
 static void classInitNative(JNIEnv* env, jclass clazz) {
@@ -246,6 +258,8 @@ static void classInitNative(JNIEnv* env, jclass clazz) {
       clazz, "devicePropertyChangedCallback", "([B[I[[B)V");
     method_adapterPropertyChangedCallback = env->GetMethodID(
       clazz, "adapterPropertyChangedCallback", "([I[[B)V");
+    method_ssrCleanupCallback = env->GetMethodID(
+      clazz, "ssr_cleanup_callback", "()V");
     ALOGI("%s: succeeds", __FUNCTION__);
 }
 
@@ -314,6 +328,16 @@ static bool bredrcleanupNative(JNIEnv *env, jobject obj) {
     return JNI_TRUE;
 }
 
+static bool hcicloseNative(JNIEnv *env, jobject obj) {
+
+    ALOGI("%s", __FUNCTION__);
+
+    jboolean result = JNI_FALSE;
+    if (!sBluetoothVendorInterface) return result;
+
+    sBluetoothVendorInterface->hciclose();
+    return JNI_TRUE;
+}
 
 static bool setWifiStateNative(JNIEnv *env, jobject obj, jboolean status) {
 
@@ -367,6 +391,7 @@ static JNINativeMethod sMethods[] = {
     {"getProfileInfoNative", "(II)Z", (void*) getProfileInfoNative},
     {"getQtiStackStatusNative", "()Z", (void*) getQtiStackStatusNative},
     {"voipNetworkWifiInfoNative", "(ZZ)Z", (void *)voipNetworkWifiInfoNative},
+    {"hcicloseNative", "()V", (void*) hcicloseNative},
 };
 
 int register_com_android_bluetooth_btservice_vendor(JNIEnv* env)

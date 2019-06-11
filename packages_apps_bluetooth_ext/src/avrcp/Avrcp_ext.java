@@ -195,7 +195,8 @@ public final class Avrcp_ext {
     public static final int BTRC_FEAT_METADATA = 0x01;
     public static final int BTRC_FEAT_ABSOLUTE_VOLUME = 0x02;
     public static final int BTRC_FEAT_BROWSE = 0x04;
-    public static final int BTRC_FEAT_AVRC_UI_UPDATE = 0x08;
+    public static final int BTRC_FEAT_COVER_ART = 0x08;
+    public static final int BTRC_FEAT_AVRC_UI_UPDATE = 0x10;
 
     /* AVRC response codes, from avrc_defs */
     private static final int AVRC_RSP_NOT_IMPL = 8;
@@ -670,6 +671,30 @@ public final class Avrcp_ext {
         Log.d(TAG, "Exit cleanup()");
     }
 
+    public boolean isCoverArtFeatureSupported(byte[] bdaddr) {
+        Log.w(TAG, "isCoverArtFeatureSupported");
+        String address = Utils.getAddressStringFromByte((byte[]) bdaddr);
+        BluetoothDevice device = mAdapter.getRemoteDevice(address);
+        if (device == null)
+            return false;
+        MediaPlayerInfo player = mMediaPlayerInfoList.getOrDefault(mCurrAddrPlayerID, null);
+        int index = getIndexForDevice(device);
+        if ((index == INVALID_DEVICE_INDEX) || (player == null))
+            return false;
+
+        short[] featureBits = player.getFeatureBitMask();
+        boolean playerSupportsCA = false;
+        for (int i = 0; i < featureBits.length; i++) {
+            if (featureBits[i] == AvrcpConstants.AVRC_PF_COVER_ART_BIT_NO) {
+                playerSupportsCA = true;
+                break;
+            }
+        }
+        boolean peerSupprtsCA = ((deviceFeatures[index].mFeatures & BTRC_FEAT_COVER_ART) != 0);
+        Log.w(TAG, "playersupportCA " + playerSupportsCA + " peersupportCA " + peerSupprtsCA);
+        return (peerSupprtsCA && playerSupportsCA);
+    }
+
     private class AudioManagerPlaybackListener extends AudioManager.AudioPlaybackCallback {
         @Override
         public void onPlaybackConfigChanged(List<AudioPlaybackConfiguration> configs) {
@@ -825,9 +850,8 @@ public final class Avrcp_ext {
             case MSG_NATIVE_REQ_GET_RC_FEATURES:
             {
                 String address = (String) msg.obj;
-                if (DEBUG)
-                    Log.v(TAG, "MSG_GET_RC_FEATURES: address="+address+
-                            ", features="+msg.arg1);
+                Log.w(TAG, "MSG_GET_RC_FEATURES: address="+address+
+                        ", features="+msg.arg1);
                 BluetoothDevice device = mAdapter.getRemoteDevice(address);
                 deviceIndex = getIndexForDevice(device);
                 if (deviceIndex == INVALID_DEVICE_INDEX) {

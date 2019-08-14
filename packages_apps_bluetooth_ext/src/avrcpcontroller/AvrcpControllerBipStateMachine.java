@@ -100,6 +100,7 @@ public class AvrcpControllerBipStateMachine extends StateMachine {
     private AvrcpControllerBipStateMachine(AvrcpControllerStateMachine mStateMachine,
                                            Handler handler, Context context) {
         super("AvrcpControllerBipStateMachine", handler);
+        setDbg(DBG);
         mContext = context;
         mAvrcpCtrlStateMachine = mStateMachine;
         mDisconnected = new Disconnected();
@@ -141,9 +142,12 @@ public class AvrcpControllerBipStateMachine extends StateMachine {
         }
         mHandlerThread = new HandlerThread("AvrcpControllerBipObexHandler",
                     Process.THREAD_PRIORITY_DISPLAY);
+        Log.d(TAG, " AvrcpControllerBipObexHandler thread start() called");
         mHandlerThread.start();
+        Log.d(TAG, " AvrcpControllerBipObexHandler thread started.");
         mAvrcpCtrlBipObexHandler =
                new AvrcpControllerBipObexHandler(mHandlerThread.getLooper(), getHandler());
+        Log.d(TAG, " BipSM instantiated");
     }
 
     static AvrcpControllerBipStateMachine make(AvrcpControllerStateMachine mStateMachine,
@@ -151,7 +155,9 @@ public class AvrcpControllerBipStateMachine extends StateMachine {
         Log.d("AvrcpControllerBipStateMachine", "make");
         AvrcpControllerBipStateMachine avrcpBipSm =
                 new AvrcpControllerBipStateMachine(mStateMachine, handler, context);
+        Log.d(TAG, " BipSM start() called.");
         avrcpBipSm.start();
+        Log.d(TAG, " BipSM started:");
         return avrcpBipSm;
     }
 
